@@ -1,49 +1,91 @@
-require('dotenv').config(); // For local environment variables
+require('dotenv').config();
 const express = require("express");
 const { MongoClient } = require("mongodb");
 const cors = require("cors");
 
 const app = express();
+
+// Configuration
 const PORT = process.env.PORT || 5100;
-
-// MongoDB configuration
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://Sandeshinde:Sanju_1530@clustersandesh.josps6l.mongodb.net/";
-const FRONTEND_URL = "https://vercel-frontend-5bxh.vercel.app"; 
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://vercel-frontend-5bxh.vercel.app";
 
-
-// MongoDB client with connection pooling
+// MongoDB Client with enhanced configuration
 const client = new MongoClient(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    maxPoolSize: 10,
-    connectTimeoutMS: 10000,
-    socketTimeoutMS: 45000
-  });
-  
-  // CORS configuration
-  const corsOptions = {
-    origin: FRONTEND_URL,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept'],
-    credentials: true
-  };
-  
-  app.use(cors(corsOptions));
-  app.use(express.json());
-  
-  // [Rest of your code remains exactly the same as in the previous complete version]
-  // ... all your routes and functions ...
-  
-  // Export for Vercel
-  module.exports = app;
-  
-  // Start server locally if not in Vercel environment
-  if (process.env.VERCEL !== "1") {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000,
+  connectTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  maxPoolSize: 10,
+  retryWrites: true,
+  retryReads: true
+});
+
+// Middleware
+app.use(cors({
+  origin: FRONTEND_URL,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json());
+
+// Health Check Endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "healthy" });
+});
+
+// Database Connection Middleware
+app.use(async (req, res, next) => {
+  try {
+    if (!client.isConnected()) {
+      await client.connect();
+      console.log("MongoDB connected successfully");
+    }
+    req.db = client.db("Sandesh");
+    next();
+  } catch (err) {
+    console.error("Database connection error:", err);
+    res.status(500).json({ error: "Database connection failed" });
   }
-  
+});
+
+// Your existing routes here (posts, signup, login, etc.)
+// ...
+
+// Error Handling Middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: "Internal Server Error" });
+});
+
+// Vercel Serverless Function Export
+module.exports = async (req, res) => {
+  try {
+    // Set timeout
+    req.setTimeout(10000, () => {
+      console.log('Request timeout');
+    });
+    
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+    
+    // Process request
+    return app(req, res);
+  } catch (err) {
+    console.error('Serverless function error:', err);
+    return res.status(500).json({ error: 'Function invocation failed' });
+  }
+};
+
+// Local development server
+if (process.env.VERCEL !== "1") {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+} 
 // Database connection function with error handling
 async function GetConnection() {
   try {
